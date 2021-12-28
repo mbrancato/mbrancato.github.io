@@ -134,35 +134,6 @@ At this point, my expectation is that some GCP customers likely have overly perm
 ## Mitigation
 To mitigate this and potentially other vulnerabilities in the Dataflow nodes, my recommendation is a tag-based firewall rule applied to the VPC to block all traffic. This can target the `dataflow` network tag, which is configured by default for Dataflow nodes.
 
-## Bug Bounty Timeline
-All times US Eastern Time.
-
-### Technical Acceptance
-- Mar 5, 2021 11:38PM - Vulnerability reported to Google's VRP. Details include the conditions when the vulnerability is exploitable, including user-managed firewall settings.
-- Mar 8, 2021 09:56AM - Triaged and assigned
-- Mar 13, 2021 07:31PM - Google closes the bug: Won't Fix (Intended Behavior).
-- Mar 13, 2021 08:12PM - I responded with clarification on requirements and additional screenshots.
-- Mar 14, 2021 06:06AM - The bug report is reopened and reassigned.
-- Mar 14, 2021 12:36PM - I provided more details on why it is exploitable as well as a Dataflow job ID which I exploited in my personal project.
-- Apr 1, 2021 07:10AM - Google closes the bug: Won't Fix (Not Reproducible). Google asks about the firewall rules and how the JMX port is accessed.
-- Apr 1, 2021 01:59PM - I responded with more information and clarified my view of the unauthenticated JMX port as the vulnerability.
-- Apr 8, 2021 06:34AM - The bug report is reopened and reassigned.
-- Apr 9, 2021 02:04AM - Google responded confirming the default firewall rules make this exploitable internally, and asks for more information on what ports are exposed externally to Dataflow nodes.
-- Apr 12, 2021 08:51AM - I responded and provided information specifically on default firewall rules and the difference when creating a project using APIs directly versus using the Cloud Console. I reiterated that the unauthenticated JMX port is the vulnerability (Google managed), and the VPC firewall may be used as a mitigating control (user managed).
-- Apr 13, 2021 09:11AM - Vulnerability accepted. Google accepted the vulnerability report and a bug is opened. The report is passed to the reward panel for consideration of payout. It comes with a warning they do not believe this would be severe enough to qualify for a reward.
-- May 4, 2021 10:20AM - The reward panel awards me $3133.70.
-
-![](/images/rce-dataflow/dataflow-timeline.png)
-
-### Payout
-- May 24, 2021 07:35PM - The Google VRP payment team reaches out to ask for personal information.
-
-A number of exchanges back and forth happen here. There were a few problems and delays being setup as a supplier to receive payment.
-
-- August 3, 2021 - Payment received.
-- August 9, 2021 04:56AM - Google sends a notification of a $200 payment.
-- August 10, 2021 02:35PM - Google responds with an explanation of the $200 as an appreciation for those who were impacted by slow bounty payouts.
-
 ## Walk-through to Get RCE
 The following is a walk-through of the process which was used at the time to gain remote code execution.
 
@@ -263,3 +234,32 @@ curl -s "http://metadata.google.internal/computeMetadata/v1/instance/service-acc
 ```
 
 It returns the Compute Engine default service account (as expected). As the default compute engine service account, it has the Editor role and significant access to the GCP project. It is likely that many customers continue to keep the default IAM role assigned to the default compute engine service account. Regardless, this shows that whatever service account is assigned to the Dataflow node, this container can access the metadata service and obtain the access / IAM permissions assigned to that service account. This can be used to attack the customer's GCP services.
+
+## Bug Bounty Timeline
+All times US Eastern Time.
+
+### Technical Acceptance
+- Mar 5, 2021 11:38PM - Vulnerability reported to Google's VRP. Details include the conditions when the vulnerability is exploitable, including user-managed firewall settings.
+- Mar 8, 2021 09:56AM - Triaged and assigned
+- Mar 13, 2021 07:31PM - Google closes the bug: Won't Fix (Intended Behavior).
+- Mar 13, 2021 08:12PM - I responded with clarification on requirements and additional screenshots.
+- Mar 14, 2021 06:06AM - The bug report is reopened and reassigned.
+- Mar 14, 2021 12:36PM - I provided more details on why it is exploitable as well as a Dataflow job ID which I exploited in my personal project.
+- Apr 1, 2021 07:10AM - Google closes the bug: Won't Fix (Not Reproducible). Google asks about the firewall rules and how the JMX port is accessed.
+- Apr 1, 2021 01:59PM - I responded with more information and clarified my view of the unauthenticated JMX port as the vulnerability.
+- Apr 8, 2021 06:34AM - The bug report is reopened and reassigned.
+- Apr 9, 2021 02:04AM - Google responded confirming the default firewall rules make this exploitable internally, and asks for more information on what ports are exposed externally to Dataflow nodes.
+- Apr 12, 2021 08:51AM - I responded and provided information specifically on default firewall rules and the difference when creating a project using APIs directly versus using the Cloud Console. I reiterated that the unauthenticated JMX port is the vulnerability (Google managed), and the VPC firewall may be used as a mitigating control (user managed).
+- Apr 13, 2021 09:11AM - Vulnerability accepted. Google accepted the vulnerability report and a bug is opened. The report is passed to the reward panel for consideration of payout. It comes with a warning they do not believe this would be severe enough to qualify for a reward.
+- May 4, 2021 10:20AM - The reward panel awards me $3133.70.
+
+![](/images/rce-dataflow/dataflow-timeline.png)
+
+### Payout
+- May 24, 2021 07:35PM - The Google VRP payment team reaches out to ask for personal information.
+
+A number of exchanges back and forth happen here. There were a few problems and delays being setup as a supplier to receive payment.
+
+- August 3, 2021 - Payment received.
+- August 9, 2021 04:56AM - Google sends a notification of a $200 payment.
+- August 10, 2021 02:35PM - Google responds with an explanation of the $200 as an appreciation for those who were impacted by slow bounty payouts.
