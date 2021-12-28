@@ -24,8 +24,6 @@ description: >- # this means to ignore newlines until "baseurl:"
   Things I find interesting in security, privacy, and technology.
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "https://mbrancato.github.io" # the base hostname & protocol for your site, e.g. http://example.com
-twitter_username: meatballninja
-github_username:  mbrancato
 google_analytics: G-8SXHQZXR8P
 
 future: false
@@ -65,3 +63,7 @@ github: [metadata]
 
 minima:
   skin: dark
+  social_links:
+    twitter: meatballninja
+    github: mbrancato
+    linkedin: mikebrancato
