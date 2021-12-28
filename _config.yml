@@ -27,6 +27,8 @@ url: "https://mbrancato.github.io" # the base hostname & protocol for your site,
 twitter_username: meatballninja
 github_username:  mbrancato
 
+future: false
+
 # Build settings
 remote_theme: jekyll/minima@3ca836f219e95ae05dbe76b773875c63686d3a1a
 plugins:
