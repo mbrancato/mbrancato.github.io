@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Remote Code Execution in Google Cloud Dataflow"
-date:   2021-12-28 22:00:00 +0000
+date:   2021-12-28 06:00:00 +0000
 ---
 
 Earlier this year, I was debugging an error in Dataflow, and as part of that process, I dropped into the worker node via SSH and began to look around. Prior to that experience I hadn't thought much about what was happening on the worker node, so I made a mental reminder to dig into Dataflow as a possible exploit vector into Google Cloud. Later that week, I spun up Dataflow in my personal Google Cloud account and started digging.
@@ -102,9 +102,7 @@ The main Java process had the following command line flags which seemed to indic
 -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote=true
 ```
 
-So from here, what I believe is that the Java JMX port is open on the node, has no authentication enabled, and does not use TLS. The next problem is to understand how or when these could be accessed remotely.
-
-The Java process, however is being run within a container. The container may or may not be a privileged container or have access to the GCP metadata service. The container in question here ended up being `gcr.io/cloud-dataflow/v1beta3/beam-java11-streaming` and it was not run as a privileged container.
+At this point, I know the Java JMX port is open on the node, has no authentication enabled, and does not use TLS. The Java process, however is being run within a container. The container in question here ended up being `gcr.io/cloud-dataflow/v1beta3/beam-java11-streaming` and it was not run as a privileged container.
 
 ```
 mike@rce-test-03132132-eggq-harness-9kxv ~ $ docker ps
@@ -121,17 +119,17 @@ e4a954c91d5a        k8s.gcr.io/pause:3.2                                  "/paus
 9kxv_default_2b23011ef885a9258e1c4ea6b0189d8c_0
 ```
 
-The container, however, was using host networking. This meant that although it was unprivileged (basically meaning it cannot access the host node as the root user), it could still access the host VM's metadata service. This allows access to generate signed JWT tokens which can be used to access other GCP services.
+The container, however, was using host networking. This meant that although it was unprivileged (basically meaning it cannot access the host VM as the root user), it could still access the host VM's metadata service. This allows access to generate signed JWT tokens which can be used to access other GCP services.
 
 Unauthenticated JMX should not be used in production and is easily exploited. Oracle [warns of this](https://docs.oracle.com/en/java/javase/17/management/monitoring-and-management-using-jmx-technology.html#GUID-9ED79A3B-B710-4B89-A64D-5C566A160A95) in the Java documentation. Exposed internally or externally, this may allow an attacker to access the Dataflow node and the GCP service account assigned to the Dataflow job. By default, this is the [default compute service account](https://cloud.google.com/compute/docs/access/service-accounts#default_service_account), which has the Editor role on the entire GCP project by default.
 
 ### Default Internal Traffic Firewall Rule
-To attack the JMX port, my goal was to make this work from the Internet. Exploitability from an internal system is a risk and interesting, but unlikely to be valued or prioritized by Google. By default, Google Cloud adds a firewall rule named `default-allow-internal` to a project VPC (private network) [created in the default network](https://cloud.google.com/vpc/docs/firewalls#more_rules_default_vpc). This rule allows nearly all traffic to pass between nodes on the VPC. So it was pretty clear that any internal VPC hosts, and possibly other hosts connected to the VPC through [Cloud Interconnect](https://cloud.google.com/network-connectivity/docs/interconnect), may also be subject to this rule and would be able to exploit this vulnerability. This would allow internal hosts to pivot and gain service account access in the Google Cloud project.
+To attack the JMX port, my goal was to make this work from the Internet. Exploitability from an internal system is a risk and interesting, but unlikely to be valued or prioritized by Google. By default, Google Cloud adds a firewall rule named `default-allow-internal` to a project's [firewall](https://cloud.google.com/vpc/docs/firewalls#more_rules_default_vpc) created via the Cloud Console. This rule allows nearly all traffic to pass between nodes on the VPC. So it was pretty clear that any internal VPC hosts, and possibly other hosts connected to the VPC through [Cloud Interconnect](https://cloud.google.com/network-connectivity/docs/interconnect), may also be subject to this rule and would be able to exploit this vulnerability. This would allow internal hosts to pivot and gain service account access in the Google Cloud project.
 
 ### External IPs by Default
-For external access, Dataflow nodes are assigned an external IP by default. This address is subject to firewall controls, and no default rules allow ingress traffic from the Internet. This is where things get somewhat implementation specific. While Google describes Dataflow as "fully managed" and I feel a PaaS or SaaS service's security should not be impacted by a customer's VPC firewall, the Dataflow worker nodes are directly impacted.
+For external access, Dataflow nodes are assigned an external IP by default. This address is subject to firewall controls, and no default rules allow ingress traffic from the Internet. This is where things get somewhat implementation specific. While Google describes Dataflow as "fully managed" and I feel a PaaS or SaaS service's security should not be impacted by a customer's VPC firewall, the Dataflow worker nodes are directly impacted. The vulnerability is that an unauthenticated Java JMX port is exposed on the network interface of the Dataflow worker node. This is entirely controlled by Google, including any local firewalls, via their instance template. The customer, however, does have the ability to mitigate this by either limiting or blocking all traffic to that port using the GCP VPC firewall. The customer would need to know that this firewall rule is required.
 
-At this point, my expectation is that customers likely have overly permissive firewall rules that may allow Dataflow nodes to be exposed on the Internet. I performed a passive scan to identify port 5555 being open in one US-based GCP [region](https://www.gstatic.com/ipranges/cloud.json). This produced over 2200 results leading me to believe that this indeed does affect real customers.
+At this point, my expectation is that some GCP customers likely have overly permissive firewall rules that may allow Dataflow nodes to be exposed on the Internet. I performed a passive scan to identify port 5555 being open in US-based GCP [regions](https://www.gstatic.com/ipranges/cloud.json). This produced over 2200 results leading me to believe that this indeed does affect real customers.
 
 ## Mitigation
 To mitigate this and potentially other vulnerabilities in the Dataflow nodes, my recommendation is a tag-based firewall rule applied to the VPC to block all traffic. This can target the `dataflow` network tag, which is configured by default for Dataflow nodes.
@@ -142,12 +140,12 @@ All times US Eastern Time.
 ### Technical Acceptance
 - Mar 5, 2021 11:38PM - Vulnerability reported to Google's VRP. Details include the conditions when the vulnerability is exploitable, including user-managed firewall settings.
 - Mar 8, 2021 09:56AM - Triaged and assigned
-- Mar 13, 2021 07:31PM - Google closes the bug: Won't Fix (Intended Behavior). The initial response claims that the vulnerability is not exploitable via the public IP. 
-- Mar 13, 2021 08:12PM - I responded with clarification on requirements and attached screenshots showing the exploit working via a public IP.
+- Mar 13, 2021 07:31PM - Google closes the bug: Won't Fix (Intended Behavior).
+- Mar 13, 2021 08:12PM - I responded with clarification on requirements and additional screenshots.
 - Mar 14, 2021 06:06AM - The bug report is reopened and reassigned.
 - Mar 14, 2021 12:36PM - I provided more details on why it is exploitable as well as a Dataflow job ID which I exploited in my personal project.
 - Apr 1, 2021 07:10AM - Google closes the bug: Won't Fix (Not Reproducible). Google asks about the firewall rules and how the JMX port is accessed.
-- Apr 1, 2021 01:59PM - I responded and referenced information in my original report and clarified my view of the unauthenticated JMX port as the vulnerability.
+- Apr 1, 2021 01:59PM - I responded with more information and clarified my view of the unauthenticated JMX port as the vulnerability.
 - Apr 8, 2021 06:34AM - The bug report is reopened and reassigned.
 - Apr 9, 2021 02:04AM - Google responded confirming the default firewall rules make this exploitable internally, and asks for more information on what ports are exposed externally to Dataflow nodes.
 - Apr 12, 2021 08:51AM - I responded and provided information specifically on default firewall rules and the difference when creating a project using APIs directly versus using the Cloud Console. I reiterated that the unauthenticated JMX port is the vulnerability (Google managed), and the VPC firewall may be used as a mitigating control (user managed).
@@ -159,7 +157,7 @@ All times US Eastern Time.
 ### Payout
 - May 24, 2021 07:35PM - The Google VRP payment team reaches out to ask for personal information.
 
-A lot of exchanges back and forth happen here. There were a few problems and delays being setup as a supplier to receive payment.
+A number of exchanges back and forth happen here. There were a few problems and delays being setup as a supplier to receive payment.
 
 - August 3, 2021 - Payment received.
 - August 9, 2021 04:56AM - Google sends a notification of a $200 payment.
@@ -217,7 +215,7 @@ PORT     STATE SERVICE
 Nmap done: 1 IP address (1 host up) scanned in 0.08 seconds
 ```
 
-Great, so we know the default worker node is indeed accessible from the Internet. The next step is to simply exploit the exposed JMX port. The easiest way I found was simply to use Metasploit, which has an exploit just for this vulnerability and worked well.
+So I know the worker node is indeed accessible from the Internet. The next step is to exploit the exposed JMX port. The easiest way I found was to use Metasploit, which has an exploit just for this vulnerability and worked well.
 
 ```
 msf6 > use exploit/multi/misc/java_jmx_server
@@ -255,7 +253,7 @@ hostname
 rce-test-03132132-eggq-harness-9kxv
 ```
 
-It's not abundantly clear, but the shell is on the Dataflow worker node and inside an unprivileged container. But that doesn't mean anything here is useful from an attacker point of view, yet.
+It's not abundantly clear, but the shell is on the Dataflow worker node and inside an unprivileged container. But that doesn't mean this is useful from an attacker point of view, yet.
 
 From here, I check to see if there is any access to the GCP project. I check the GCP metadata service for a service account assigned to the node and exposed to the container.
 
